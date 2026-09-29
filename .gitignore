@@ -1,0 +1,28 @@
+# Local secrets and environment configuration
+.env
+.env.*
+!.env.example
+
+# Dependencies and generated application output
+node_modules/
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Local database and uploaded medical documents
+.postgres-data/
+uploads/
+
+# Python environments and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Local/editor and operating-system files
+.DS_Store
+Thumbs.db
+*.pem

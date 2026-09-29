@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String       @id @default(cuid())
+  email         String       @unique
+  name          String?
+  passwordHash  String?
+  provider      String       @default("email")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  familyMembers FamilyMember[]
+  reports       LabReport[]
+  files         UploadedFile[]
+}
+
+model FamilyMember {
+  id        String     @id @default(cuid())
+  name      String
+  userId    String
+  user      User       @relation(fields: [userId], references: [id])
+  reports   LabReport[]
+  createdAt DateTime   @default(now())
+}
+
+model LabReport {
+  id          String          @id @default(cuid())
+  title       String
+  status      String          @default("uploaded")
+  userId      String
+  user        User            @relation(fields: [userId], references: [id])
+  familyMemberId String?
+  familyMember FamilyMember? @relation(fields: [familyMemberId], references: [id])
+  uploadedFile UploadedFile?
+  extractedResults ExtractedLabResult[]
+  explanations ReportExplanation?
+  chatMessages ChatMessage[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model UploadedFile {
+  id          String    @id @default(cuid())
+  fileName    String
+  originalName String
+  mimeType    String
+  sizeBytes   Int
+  storagePath String
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  reportId    String    @unique
+  report      LabReport @relation(fields: [reportId], references: [id])
+  createdAt   DateTime  @default(now())
+}
+
+model ExtractedLabResult {
+  id            String    @id @default(cuid())
+  reportId      String
+  report        LabReport @relation(fields: [reportId], references: [id])
+  testName      String
+  resultValue   String?
+  unit          String?
+  referenceRange String?
+  flag          String    @default("unclear")
+  confidence    Float?
+  rawText       String?
+  createdAt     DateTime  @default(now())
+}
+
+model ReportExplanation {
+  id          String    @id @default(cuid())
+  reportId    String    @unique
+  report      LabReport @relation(fields: [reportId], references: [id])
+  summary     String
+  createdAt   DateTime  @default(now())
+}
+
+model ChatMessage {
+  id          String    @id @default(cuid())
+  reportId    String
+  report      LabReport @relation(fields: [reportId], references: [id])
+  role        String    @default("user")
+  content     String
+  createdAt   DateTime  @default(now())
+}
