@@ -9,7 +9,8 @@
     "lint": "eslint",
     "db:generate": "prisma generate --schema=../../prisma/schema.prisma",
     "db:push": "prisma db push --schema=../../prisma/schema.prisma",
-    "db:migrate": "prisma migrate deploy --schema=../../prisma/schema.prisma"
+    "db:migrate": "prisma migrate deploy --schema=../../prisma/schema.prisma",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@prisma/client": "^6.15.0",

@@ -38,16 +38,7 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // 1. Run OCR extraction via flexible OCR provider
-    const ocrProvider = getOcrProvider();
-    const ocrResult = await ocrProvider.extract({
-      buffer,
-      filename: file.name,
-      mimeType: file.type,
-      reportTitle,
-    });
-
-    // 2. Persist uploaded file to storage (local uploads folder)
+    // 1. Persist uploaded file to storage (local uploads folder)
     const uploadsDir = path.join(process.cwd(), "uploads");
     await fs.mkdir(uploadsDir, { recursive: true });
 
@@ -57,70 +48,84 @@ export async function POST(request: NextRequest) {
     await fs.writeFile(fullStoragePath, buffer);
     const relativeStoragePath = path.join("uploads", uniqueFileName).replace(/\\/g, "/");
 
-    // 3. Persist to PostgreSQL via Prisma
-    let savedReportId: string | null = null;
+    // 2. Persist report and file metadata to PostgreSQL via Prisma
+    const report = await prisma.$transaction(async (tx) => {
+      const createdReport = await tx.labReport.create({
+        data: {
+          title: reportTitle || "Lab report",
+          status: "uploaded",
+          userId: session.userId,
+        },
+      });
+
+      await tx.uploadedFile.create({
+        data: {
+          fileName: uniqueFileName,
+          originalName: file.name,
+          mimeType: file.type,
+          sizeBytes: file.size,
+          storagePath: relativeStoragePath,
+          userId: session.userId,
+          reportId: createdReport.id,
+        },
+      });
+
+      return createdReport;
+    });
+
+    // 3. Attempt OCR extraction if service is configured/reachable
+    let extractedText = "";
+    let results: ExtractedResultItem[] = [];
+    let ocrProviderName: string | null = null;
+    let ocrWarning: string | null = null;
+
     try {
-      const created = await prisma.$transaction(async (tx) => {
-        const report = await tx.labReport.create({
-          data: {
-            title: reportTitle || "Lab report",
-            status: "completed",
-            userId: session.userId,
-          },
-        });
+      const ocrProvider = getOcrProvider();
+      ocrProviderName = ocrProvider.name;
+      const ocrResult = await ocrProvider.extract({
+        buffer,
+        filename: file.name,
+        mimeType: file.type,
+        reportTitle,
+      });
 
-        await tx.uploadedFile.create({
-          data: {
-            fileName: uniqueFileName,
-            originalName: file.name,
-            mimeType: file.type,
-            sizeBytes: file.size,
-            storagePath: relativeStoragePath,
-            userId: session.userId,
+      extractedText = ocrResult.text || "";
+      results = ocrResult.results || [];
+
+      if (results.length > 0) {
+        await prisma.extractedLabResult.createMany({
+          data: results.map((res: ExtractedResultItem) => ({
             reportId: report.id,
-          },
+            testName: res.testName || "Unknown Test",
+            resultValue: res.resultValue !== null && res.resultValue !== undefined ? String(res.resultValue) : null,
+            unit: res.unit || null,
+            referenceRange: res.referenceRange || null,
+            flag: res.flag || "unclear",
+            confidence: typeof res.confidence === "number" ? res.confidence : 0.75,
+            rawText: res.rawText || null,
+          })),
         });
+      }
 
-        if (ocrResult.results && ocrResult.results.length > 0) {
-          await tx.extractedLabResult.createMany({
-            data: ocrResult.results.map((res: ExtractedResultItem) => ({
-              reportId: report.id,
-              testName: res.testName || "Unknown Test",
-              resultValue: res.resultValue !== null && res.resultValue !== undefined ? String(res.resultValue) : null,
-              unit: res.unit || null,
-              referenceRange: res.referenceRange || null,
-              flag: res.flag || "unclear",
-              confidence: typeof res.confidence === "number" ? res.confidence : 0.75,
-              rawText: res.rawText || null,
-            })),
-          });
-        }
-
-        return report;
+      await prisma.labReport.update({
+        where: { id: report.id },
+        data: { status: "completed" },
       });
-
-      savedReportId = created.id;
-    } catch (dbError) {
-      console.error("Database persistence warning:", dbError);
-      // If DB error occurs (e.g. Postgres offline in dev), return OCR results with DB warning
-      return NextResponse.json({
-        success: true,
-        reportId: null,
-        filename: ocrResult.filename,
-        extractedText: ocrResult.text,
-        results: ocrResult.results || [],
-        provider: ocrResult.provider,
-        warning: "OCR extracted successfully, but database persistence failed. Ensure PostgreSQL is running.",
-      });
+    } catch (ocrErr) {
+      console.warn("OCR service unavailable or failed during upload:", ocrErr instanceof Error ? ocrErr.message : ocrErr);
+      ocrWarning = "File uploaded and saved securely. OCR extraction was skipped or service is currently offline.";
     }
 
     return NextResponse.json({
       success: true,
-      reportId: savedReportId,
-      filename: ocrResult.filename,
-      extractedText: ocrResult.text,
-      results: ocrResult.results || [],
-      provider: ocrResult.provider,
+      reportId: report.id,
+      filename: file.name,
+      storedPath: relativeStoragePath,
+      extractedText,
+      results,
+      provider: ocrProviderName,
+      warning: ocrWarning,
+      status: results.length > 0 ? "completed" : "uploaded",
     });
   } catch (error) {
     console.error("Upload error:", error);

@@ -1,4 +1,22 @@
 {
+  "name": "lab-saathi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Medical lab report understanding platform",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=web",
+    "build": "npm run build --workspace=web",
+    "lint": "npm run lint --workspace=web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:start": "node scripts/start-db.mjs",
+    "db:generate": "prisma generate --schema=prisma/schema.prisma",
+    "db:push": "prisma db push --schema=prisma/schema.prisma",
+    "db:migrate": "prisma migrate deploy --schema=prisma/schema.prisma"
+  },
   "devDependencies": {
     "embedded-postgres": "^18.4.0-beta.17",
     "prisma": "^6.15.0"
